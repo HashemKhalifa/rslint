@@ -39,7 +39,7 @@ jobs:
         with:
           ref: ${{ matrix.ref }}
           submodules: true
-          fetch-depth: 0
+          fetch-depth: 2
 
       - uses: actions/setup-go@v6
         with:
