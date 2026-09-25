@@ -11,8 +11,18 @@ permissions:
 
 jobs:
   focused:
+    name: ${{ matrix.package }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - prefer_flat_math_min_max
+          - max_nested_calls
+          - consistent_template_literal_escape
+          - no_global_object_property_assignment
+          - prefer_array_last_methods
     steps:
       - uses: actions/checkout@v6
         with:
@@ -28,17 +38,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          paths=(
-            internal/plugins/unicorn/rules/prefer_flat_math_min_max
-            internal/plugins/unicorn/rules/max_nested_calls
-            internal/plugins/unicorn/rules/consistent_template_literal_escape
-            internal/plugins/unicorn/rules/no_global_object_property_assignment
-            internal/plugins/unicorn/rules/prefer_array_last_methods
-          )
-          unformatted="$(gofmt -l "${paths[@]}")"
+          path="internal/plugins/unicorn/rules/${{ matrix.package }}"
+          unformatted="$(gofmt -l "$path")"
           if [[ -n "$unformatted" ]]; then
             echo "$unformatted"
-            gofmt -d "${paths[@]}"
+            gofmt -d "$path"
             exit 1
           fi
 
@@ -46,24 +50,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          packages=(
-            prefer_flat_math_min_max
-            max_nested_calls
-            consistent_template_literal_escape
-            no_global_object_property_assignment
-            prefer_array_last_methods
-          )
-          for package in "${packages[@]}"; do
-            echo "::group::${package}"
-            cover="${RUNNER_TEMP}/${package}.cover"
-            go test "./internal/plugins/unicorn/rules/${package}" -coverprofile="$cover"
-            total="$(go tool cover -func="$cover" | awk '/^total:/ {print $3}')"
-            echo "coverage=${total}"
-            if [[ "$total" != "100.0%" ]]; then
-              echo "::error::${package} statement coverage is ${total}, expected 100.0%"
-              go tool cover -func="$cover"
-              exit 1
-            fi
-            echo "GREEN_CHECKPOINT_OK ${package}"
-            echo "::endgroup::"
-          done
+          package="${{ matrix.package }}"
+          cover="${RUNNER_TEMP}/${package}.cover"
+          go test "./internal/plugins/unicorn/rules/${package}" -coverprofile="$cover"
+          total="$(go tool cover -func="$cover" | awk '/^total:/ {print $3}')"
+          echo "coverage=${total}"
+          if [[ "$total" != "100.0%" ]]; then
+            echo "::error::${package} statement coverage is ${total}, expected 100.0%"
+            go tool cover -func="$cover"
+            exit 1
+          fi
+          echo "GREEN_CHECKPOINT_OK ${package}"
