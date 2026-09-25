@@ -1,0 +1,69 @@
+name: Unicorn five green proof
+
+on:
+  pull_request:
+    branches:
+      - ci/unicorn-five-green-base-20260925
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.0'
+          cache: true
+
+      - name: Check format
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            internal/plugins/unicorn/rules/prefer_flat_math_min_max
+            internal/plugins/unicorn/rules/max_nested_calls
+            internal/plugins/unicorn/rules/consistent_template_literal_escape
+            internal/plugins/unicorn/rules/no_global_object_property_assignment
+            internal/plugins/unicorn/rules/prefer_array_last_methods
+          )
+          unformatted="$(gofmt -l "${paths[@]}")"
+          if [[ -n "$unformatted" ]]; then
+            echo "$unformatted"
+            gofmt -d "${paths[@]}"
+            exit 1
+          fi
+
+      - name: Test and require 100 percent statement coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          packages=(
+            prefer_flat_math_min_max
+            max_nested_calls
+            consistent_template_literal_escape
+            no_global_object_property_assignment
+            prefer_array_last_methods
+          )
+          for package in "${packages[@]}"; do
+            echo "::group::${package}"
+            cover="${RUNNER_TEMP}/${package}.cover"
+            go test "./internal/plugins/unicorn/rules/${package}" -coverprofile="$cover"
+            total="$(go tool cover -func="$cover" | awk '/^total:/ {print $3}')"
+            echo "coverage=${total}"
+            if [[ "$total" != "100.0%" ]]; then
+              echo "::error::${package} statement coverage is ${total}, expected 100.0%"
+              go tool cover -func="$cover"
+              exit 1
+            fi
+            echo "GREEN_CHECKPOINT_OK ${package}"
+            echo "::endgroup::"
+          done
