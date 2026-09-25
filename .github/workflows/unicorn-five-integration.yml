@@ -13,7 +13,7 @@ jobs:
   integration:
     name: ${{ matrix.rule }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +39,7 @@ jobs:
         with:
           ref: ${{ matrix.ref }}
           submodules: true
-          fetch-depth: 2
+          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -49,13 +49,27 @@ jobs:
       - name: Setup Node
         uses: ./.github/actions/setup-node
 
-      - name: Verify focused Go and catalog
+      - name: Verify branch diff and focused Go
         shell: bash
         run: |
           set -euo pipefail
+          base=88e1af28282fefe552e1f431f667209cee3dcdd2
+          git diff --check "$base"...HEAD
+          if git diff --name-only "$base"...HEAD | grep -Fx 'packages/rslint/src/config/presets.test.ts'; then
+            echo "::error::presets.test.ts must remain untouched"
+            exit 1
+          fi
           go test "./internal/plugins/unicorn/rules/${{ matrix.package }}"
           go test ./internal/rules -run '^TestAllContainsEveryGoRuleExactlyOnce$'
-          git diff --check HEAD^ HEAD
+
+      - name: Scoped golangci-lint
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9
+        with:
+          version: v2.13.2
+          args: --timeout=15m --new-from-merge-base=88e1af28282fefe552e1f431f667209cee3dcdd2 ./internal/plugins/unicorn/rules/${{ matrix.package }}
+
+      - name: Format check
+        run: pnpm run format:check
 
       - name: Build native and JavaScript artifacts
         shell: bash
@@ -71,8 +85,12 @@ jobs:
           set -euo pipefail
           CI=true pnpm --dir packages/rslint-test-tools exec rs test run "tests/eslint-plugin-unicorn/rules/${{ matrix.rule }}.test.ts"
 
-      - name: Verify spelling
+      - name: Spell-check changed text
         shell: bash
         run: |
           set -euo pipefail
-          pnpm run check-spell             "internal/plugins/unicorn/rules/${{ matrix.package }}/${{ matrix.package }}.md"             "packages/rslint-test-tools/tests/eslint-plugin-unicorn/rules/${{ matrix.rule }}.test.ts"
+          base=88e1af28282fefe552e1f431f667209cee3dcdd2
+          mapfile -t files < <(git diff --name-only "$base"...HEAD -- '*.go' '*.md' '*.ts' '*.mts')
+          if (( ${#files[@]} > 0 )); then
+            pnpm run check-spell "${files[@]}"
+          fi
