@@ -1,0 +1,78 @@
+name: Unicorn five integration proof
+
+on:
+  pull_request:
+    branches:
+      - ci/unicorn-five-green-base-20260925
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: ${{ matrix.rule }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rule: prefer-flat-math-min-max
+            ref: feat/unicorn-prefer-flat-math-min-max
+            package: prefer_flat_math_min_max
+          - rule: max-nested-calls
+            ref: feat/unicorn-max-nested-calls
+            package: max_nested_calls
+          - rule: consistent-template-literal-escape
+            ref: feat/unicorn-consistent-template-literal-escape
+            package: consistent_template_literal_escape
+          - rule: no-global-object-property-assignment
+            ref: feat/unicorn-no-global-object-property-assignment
+            package: no_global_object_property_assignment
+          - rule: prefer-array-last-methods
+            ref: feat/unicorn-prefer-array-last-methods
+            package: prefer_array_last_methods
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.ref }}
+          submodules: true
+          fetch-depth: 2
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.0'
+          cache: true
+
+      - name: Setup Node
+        uses: ./.github/actions/setup-node
+
+      - name: Verify focused Go and catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test "./internal/plugins/unicorn/rules/${{ matrix.package }}"
+          go test ./internal/rules -run '^TestAllContainsEveryGoRuleExactlyOnce$'
+          git diff --check HEAD^ HEAD
+
+      - name: Build native and JavaScript artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @rslint/core build:bin
+          go run ./tools/dump_rule_schemas > packages/rslint/rule-schemas.json
+          pnpm --filter @rslint/core build:js
+
+      - name: Verify focused JavaScript mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          CI=true pnpm --dir packages/rslint-test-tools exec rs test run "tests/eslint-plugin-unicorn/rules/${{ matrix.rule }}.test.ts"
+
+      - name: Verify spelling
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run check-spell             "internal/plugins/unicorn/rules/${{ matrix.package }}/${{ matrix.package }}.md"             "packages/rslint-test-tools/tests/eslint-plugin-unicorn/rules/${{ matrix.rule }}.test.ts"
