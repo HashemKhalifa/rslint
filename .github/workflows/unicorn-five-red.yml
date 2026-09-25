@@ -1,0 +1,55 @@
+name: Unicorn five red proof
+
+on:
+  pull_request:
+    branches:
+      - ci/unicorn-five-red-base-20260925
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  prove-red:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.0'
+          cache: true
+
+      - name: Prove inert rules fail their invalid suites
+        shell: bash
+        run: |
+          set -u
+          packages=(
+            prefer_flat_math_min_max
+            max_nested_calls
+            consistent_template_literal_escape
+            no_global_object_property_assignment
+            prefer_array_last_methods
+          )
+
+          for package in "${packages[@]}"; do
+            echo "::group::${package}"
+            output_file="${RUNNER_TEMP}/${package}.log"
+            if go test "./internal/plugins/unicorn/rules/${package}" >"${output_file}" 2>&1; then
+              cat "${output_file}"
+              echo "::error::${package} unexpectedly passed with an inert rule"
+              exit 1
+            fi
+
+            cat "${output_file}"
+            if ! grep -q "Expected invalid test case to contain exactly" "${output_file}"; then
+              echo "::error::${package} failed for something other than the intended red RuleTester checkpoint"
+              exit 1
+            fi
+            echo "RED_CHECKPOINT_OK ${package}"
+            echo "::endgroup::"
+          done
