@@ -51,7 +51,8 @@ jobs:
         run: |
           set -euo pipefail
           package="${{ matrix.package }}"
-          if ! output="$(go test "./internal/plugins/unicorn/rules/${package}" -cover 2>&1)"; then
+          cover="${RUNNER_TEMP}/${package}.cover"
+          if ! output="$(go test "./internal/plugins/unicorn/rules/${package}" -cover -coverprofile="$cover" -coverpkg="./internal/plugins/unicorn/rules/${package}" 2>&1)"; then
             echo "$output"
             exit 1
           fi
@@ -60,6 +61,7 @@ jobs:
           echo "coverage=${total}"
           if [[ "$total" != "100.0%" ]]; then
             echo "::error::${package} statement coverage is ${total}, expected 100.0%"
+            go tool cover -func="$cover"
             exit 1
           fi
           echo "GREEN_CHECKPOINT_OK ${package}"
