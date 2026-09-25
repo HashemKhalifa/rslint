@@ -51,13 +51,15 @@ jobs:
         run: |
           set -euo pipefail
           package="${{ matrix.package }}"
-          cover="${RUNNER_TEMP}/${package}.cover"
-          go test "./internal/plugins/unicorn/rules/${package}" -coverprofile="$cover"
-          total="$(go tool cover -func="$cover" | awk '/^total:/ {print $3}')"
+          if ! output="$(go test "./internal/plugins/unicorn/rules/${package}" -cover 2>&1)"; then
+            echo "$output"
+            exit 1
+          fi
+          echo "$output"
+          total="$(printf '%s\n' "$output" | sed -n 's/.*coverage: \([0-9.]*%\) of statements.*/\1/p' | tail -1)"
           echo "coverage=${total}"
           if [[ "$total" != "100.0%" ]]; then
             echo "::error::${package} statement coverage is ${total}, expected 100.0%"
-            go tool cover -func="$cover"
             exit 1
           fi
           echo "GREEN_CHECKPOINT_OK ${package}"
